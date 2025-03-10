@@ -1,52 +1,73 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
-import threading
 import cv2
 import numpy as np
+import torch
 from ultralytics import YOLO
 from PIL import Image, ImageTk
 
-model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\runs\runs\detect\train\weights\best.pt")
 
-def process_frame(frame, line_y):
+INPUT_SIZE = 320      # Lower resolution for faster processing
+SKIP_FRAMES = 1       # Process every nth frame
+device = "cpu"
+print("Using device:", device)
+
+model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\runs\runs\detect\train\weights\best.pt")
+model.to(device)
+
+def process_frame(frame, line_y_original):
     """
-    Process a single frame:
-      - Run YOLO detection on the frame.
+    Process a frame:
+      - Resize to a lower resolution.
+      - Preprocess and run YOLO inference.
       - Draw a horizontal detection line.
-      - For each detection, if the bottom of the bounding box (y2) is below the line,
-        mark it as a violation (red box), else mark it as safe (green box).
+      - Mark bounding boxes as red (violation) if the bottom of the box crosses the line; else green.
     """
-    results = model(frame)
-    height, width, _ = frame.shape
-    cv2.line(frame, (0, line_y), (width, line_y), (255, 0, 0), 2)
+    resized = cv2.resize(frame, (INPUT_SIZE, INPUT_SIZE))
+
+    rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    rgb = rgb.astype(np.float32) / 255.0
+    tensor = np.transpose(rgb, (2, 0, 1))
+    tensor = np.expand_dims(tensor, axis=0)
+    tensor = torch.from_numpy(tensor).to(device)
+    
+    results = model(tensor)
+    
+    line_y_resized = int(INPUT_SIZE * 0.8)
+    cv2.line(resized, (0, line_y_resized), (INPUT_SIZE, line_y_resized), (255, 0, 0), 2)
+    
 
     for result in results:
         for box in result.boxes:
-            coords = box.xyxy[0]
+            coords = box.xyxy[0]  
             x1, y1, x2, y2 = int(coords[0]), int(coords[1]), int(coords[2]), int(coords[3])
             conf = box.conf[0].item()
-            if y2 > line_y:
-                color = (0, 0, 255)  
+            
+            if y2 > line_y_resized:
+                color = (0, 0, 255)  # Red indicates violation
                 label = "Violation"
             else:
-                color = (0, 255, 0) 
+                color = (0, 255, 0)  # Green indicates safe
                 label = "Safe"
-            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, f"{label} {conf:.2f}", (x1, max(y1 - 10, 0)),
+            cv2.rectangle(resized, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(resized, f"{label} {conf:.2f}", (x1, max(y1-10, 0)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
     
-    return frame
+    return resized
 
-class TrafficViolationGUI:
+class TrafficViolationApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Traffic Signal Violation Detector")
         self.video_path = None
         self.cap = None
         self.running = False
-    
+        self.frame_count = 0
+        self.delay = 33  # Default delay in ms (approx. 30 FPS)
+        
+        # GUI Elements
         self.video_label = tk.Label(root)
-        self.video_label.pack()
+        self.video_label.pack(expand=True, fill="both")
         
         self.select_btn = tk.Button(root, text="Select Video", command=self.select_video)
         self.select_btn.pack(pady=5)
@@ -56,7 +77,7 @@ class TrafficViolationGUI:
         
         self.stop_btn = tk.Button(root, text="Stop Processing", command=self.stop_video, state=tk.DISABLED)
         self.stop_btn.pack(pady=5)
-   
+        
         self.status_label = tk.Label(root, text="Status: Waiting for video selection")
         self.status_label.pack(pady=5)
     
@@ -79,43 +100,65 @@ class TrafficViolationGUI:
             messagebox.showerror("Error", "Could not open video.")
             return
         
+        # Try to set delay based on video FPS if available
+        fps = self.cap.get(cv2.CAP_PROP_FPS)
+        if fps and fps > 0:
+            self.delay = int(1000 / fps)
+        else:
+            self.delay = 33  # Default ~30 FPS
+        
         self.running = True
+        self.frame_count = 0
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
         
+    
         ret, frame = self.cap.read()
         if ret:
-            height, width, _ = frame.shape
-            self.line_y = int(height * 0.8)
-            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0) 
-        threading.Thread(target=self.video_loop, daemon=True).start()
+            height, _, _ = frame.shape
+            # Detection line at 90% of the original height
+            self.line_y_original = int(height * 0.9)
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # Reset video to start
+        
+        self.update_frame()
     
-    def video_loop(self):
-        while self.running and self.cap.isOpened():
-            ret, frame = self.cap.read()
-            if not ret:
-                break
-            processed_frame = process_frame(frame, self.line_y)
-            
+    def update_frame(self):
+        if not self.running or self.cap is None:
+            return
+        
+        ret, frame = self.cap.read()
+        if not ret:
+            self.stop_video()
+            return
+        
+        self.frame_count += 1
+        # Process only every SKIP_FRAMES-th frame
+        if self.frame_count % SKIP_FRAMES == 0:
+            processed_frame = process_frame(frame, self.line_y_original)
             cv2image = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
             img = Image.fromarray(cv2image)
             imgtk = ImageTk.PhotoImage(image=img)
             self.video_label.imgtk = imgtk
             self.video_label.config(image=imgtk)
-            fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
-            delay = int(1000 / fps)
-            self.root.after(delay)
-        self.stop_video()
+
+        self.root.after(self.delay, self.update_frame)
     
     def stop_video(self):
         self.running = False
         if self.cap:
             self.cap.release()
+            self.cap = None
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         self.status_label.config(text="Status: Video processing stopped.")
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = TrafficViolationGUI(root)
+    screen_width = root.winfo_screenwidth()
+    screen_height = root.winfo_screenheight()
+    half_width = screen_width // 2
+    half_height = screen_height // 2
+    root.geometry(f"{half_width}x{half_height}")
+    
+    app = TrafficViolationApp(root)
     root.mainloop()
