@@ -1,244 +1,175 @@
-from tkinter import *
-from PIL import Image, ImageTk
-from tkinter import filedialog
-import detect as det
-import imageio
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import threading
 import cv2
+import torch
+import numpy as np
+from PIL import Image, ImageTk
 
-class Window(Frame):
-    def __init__(self, master=None):
-        Frame.__init__(self, master)
+traffic_light_state = "red"
 
-        self.master = master
-        self.pos = []
-        self.line = []
-        self.rect = []
-        self.master.title("GUI")
-        self.pack(fill=BOTH, expand=1)
+# Load the TorchScript model (ensure the model file is in the specified path)
+model = torch.jit.load("model/best_scripted.pt")
+model.eval()
 
-        self.counter = 0
+def preprocess(image, img_size=640):
+    """
+    Preprocess an image for the model.
+    - Resize to img_size x img_size
+    - Convert from BGR to RGB, normalize to [0, 1]
+    - Rearrange dimensions to (1, 3, H, W)
+    """
+    img = cv2.resize(image, (img_size, img_size))
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = img.astype(np.float32) / 255.0
+    img = np.transpose(img, (2, 0, 1))
+    img = np.expand_dims(img, axis=0)
+    return torch.from_numpy(img)
 
-        menu = Menu(self.master)
-        self.master.config(menu=menu)
+def postprocess(outputs, conf_threshold=0.5):
+    """
+    Convert raw model outputs into a list of detections.
+    This dummy postprocessing assumes each prediction is:
+    [x1, y1, x2, y2, confidence, class]
+    Adjust this function to match your model's output format.
+    """
+    detections = []
+    # Assume outputs is a tensor of shape (batch, num_preds, 6)
+    outputs = outputs[0]  # Remove batch dimension if needed
+    for pred in outputs:
+        conf = pred[4].item()
+        if conf > conf_threshold:
+            x1, y1, x2, y2, _, cls = pred.tolist()
+            detections.append({
+                "bbox": [int(x1), int(y1), int(x2), int(y2)],
+                "confidence": conf,
+                "class": int(cls)
+            })
+    return detections
 
-        file = Menu(menu)
-        file.add_command(label="Open", command=self.open_file)
-        file.add_command(label="Exit", command=self.client_exit)
-        menu.add_cascade(label="File", menu=file)
-        
-        analyze = Menu(menu)
-        analyze.add_command(label="Region of Interest", command=self.regionOfInterest)
-        menu.add_cascade(label="Analyze", menu=analyze)
+def process_video(video_path, output_path):
+    """
+    Process the input video:
+      - For each frame, run inference,
+      - Draw a horizontal detection line,
+      - For each detection, check if the bottom of the bounding box (y2)
+        crosses the detection line.
+      - If the traffic light state is red and the vehicle crosses the line,
+        draw a red box; otherwise, draw a green box.
+    """
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        print("Error opening video file")
+        return
 
-        self.filename = "Images/home.jpg"
-        self.imgSize = Image.open(self.filename)
-        self.tkimage =  ImageTk.PhotoImage(self.imgSize)
-        self.w, self.h = (1366, 768)
-        
-        self.canvas = Canvas(master = root, width = self.w, height = self.h)
-        self.canvas.create_image(20, 20, image=self.tkimage, anchor='nw')
-        self.canvas.pack()
+    # Get video properties and prepare VideoWriter
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
-    def open_file(self):
-        self.filename = filedialog.askopenfilename()
+    # Define a horizontal detection line (for example, at 80% of frame height)
+    line_y = int(height * 0.8)
 
-        cap = cv2.VideoCapture(self.filename)
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-        reader = imageio.get_reader(self.filename)
-        fps = reader.get_meta_data()['fps'] 
+        # Draw the detection line on the frame (blue color)
+        cv2.line(frame, (0, line_y), (width, line_y), (255, 0, 0), 2)
 
-        ret, image = cap.read()
-        cv2.imwrite('G:/Traffic Violation Detection/Traffic Signal Violation Detection System/Images/preview.jpg', image)
+        # Preprocess the frame and run inference
+        input_tensor = preprocess(frame)
+        with torch.no_grad():
+            outputs = model(input_tensor)
+        detections = postprocess(outputs)
 
-        self.show_image('G:/Traffic Violation Detection/Traffic Signal Violation Detection System/Images/preview.jpg')
+        # For each detection, decide box color based on crossing and traffic light state
+        for det in detections:
+            x1, y1, x2, y2 = det["bbox"]
+            # Compute bottom-center of the bounding box
+            x_center = (x1 + x2) // 2
+            y_bottom = y2  # using the bottom y coordinate
 
+            # Check if the vehicle has crossed the line
+            has_crossed = y_bottom > line_y
 
-    def show_image(self, frame):
-        self.imgSize = Image.open(frame)
-        self.tkimage =  ImageTk.PhotoImage(self.imgSize)
-        self.w, self.h = (1366, 768)
+            # Determine color: red for violation (if red light and crossed), else green.
+            if traffic_light_state == "red" and has_crossed:
+                color = (0, 0, 255)  # Red in BGR
+                label = "Violation"
+            else:
+                color = (0, 255, 0)  # Green in BGR
+                label = "Safe"
 
-        self.canvas.destroy()
+            cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+            cv2.putText(frame, f"{label} {det['confidence']:.2f}", (x1, max(y1 - 10, 0)), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        self.canvas = Canvas(master = root, width = self.w, height = self.h)
-        self.canvas.create_image(0, 0, image=self.tkimage, anchor='nw')
-        self.canvas.pack()
+        out.write(frame)
+        # Optionally, show the frame (press 'q' to exit early)
+        cv2.imshow("Traffic Violation Detection", frame)
+        if cv2.waitKey(1) & 0xFF == ord("q"):
+            break
 
-    def regionOfInterest(self):
-        root.config(cursor="plus") 
-        self.canvas.bind("<Button-1>", self.imgClick) 
+    cap.release()
+    out.release()
+    cv2.destroyAllWindows()
 
-    def client_exit(self):
-        exit()
+# GUI Application Class
+class App:
+    def __init__(self, root):
+        self.root = root
+        root.title("Traffic Light Violation Detector")
+        self.video_path = None
 
-    def imgClick(self, event):
+        # Label to show the current traffic light state
+        self.state_label = tk.Label(root, text=f"Traffic Light State: {traffic_light_state.upper()}")
+        self.state_label.pack(pady=5)
 
-        if self.counter < 2:
-            x = int(self.canvas.canvasx(event.x))
-            y = int(self.canvas.canvasy(event.y))
-            self.line.append((x, y))
-            self.pos.append(self.canvas.create_line(x - 5, y, x + 5, y, fill="red", tags="crosshair"))
-            self.pos.append(self.canvas.create_line(x, y - 5, x, y + 5, fill="red", tags="crosshair"))
-            self.counter += 1
+        # Button to toggle traffic light state
+        self.toggle_button = tk.Button(root, text="Toggle Traffic Light", command=self.toggle_state)
+        self.toggle_button.pack(pady=10)
 
-        # elif self.counter < 4:
-        #     x = int(self.canvas.canvasx(event.x))
-        #     y = int(self.canvas.canvasy(event.y))
-        #     self.rect.append((x, y))
-        #     self.pos.append(self.canvas.create_line(x - 5, y, x + 5, y, fill="red", tags="crosshair"))
-        #     self.pos.append(self.canvas.create_line(x, y - 5, x, y + 5, fill="red", tags="crosshair"))
-        #     self.counter += 1
+        self.select_button = tk.Button(root, text="Select Video", command=self.select_video)
+        self.select_button.pack(pady=10)
 
-        if self.counter == 2:
-            #unbinding action with mouse-click
-            self.canvas.unbind("<Button-1>")
-            root.config(cursor="arrow")
-            self.counter = 0
+        self.process_button = tk.Button(root, text="Process Video", command=self.process_video_thread, state=tk.DISABLED)
+        self.process_button.pack(pady=10)
 
-            #show created virtual line
-            print(self.line)
-            print(self.rect)
-            img = cv2.imread('G:/Traffic Violation Detection/Traffic Signal Violation Detection System/Images/preview.jpg')
-            cv2.line(img, self.line[0], self.line[1], (0, 255, 0), 3)
-            cv2.imwrite('G:/Traffic Violation Detection/Traffic Signal Violation Detection System/Images/copy.jpg', img)
-            self.show_image('G:/Traffic Violation Detection/Traffic Signal Violation Detection System/Images/copy.jpg')
+        self.status_label = tk.Label(root, text="Status: Waiting for video selection")
+        self.status_label.pack(pady=10)
 
-            ## for demonstration
-            # (rxmin, rymin) = self.rect[0]
-            # (rxmax, rymax) = self.rect[1]
+    def toggle_state(self):
+        # Toggle the global traffic light state between "red" and "green"
+        global traffic_light_state
+        traffic_light_state = "green" if traffic_light_state == "red" else "red"
+        self.state_label.config(text=f"Traffic Light State: {traffic_light_state.upper()}")
 
-            # tf = False
-            # tf |= self.intersection(self.line[0], self.line[1], (rxmin, rymin), (rxmin, rymax))
-            # print(tf)
-            # tf |= self.intersection(self.line[0], self.line[1], (rxmax, rymin), (rxmax, rymax))
-            # print(tf)
-            # tf |= self.intersection(self.line[0], self.line[1], (rxmin, rymin), (rxmax, rymin))
-            # print(tf)
-            # tf |= self.intersection(self.line[0], self.line[1], (rxmin, rymax), (rxmax, rymax))
-            # print(tf)
+    def select_video(self):
+        self.video_path = filedialog.askopenfilename(title="Select Video", 
+                                                     filetypes=(("MP4 files", "*.mp4"), ("All files", "*.*")))
+        if self.video_path:
+            self.status_label.config(text=f"Selected: {self.video_path}")
+            self.process_button.config(state=tk.NORMAL)
 
-            # cv2.line(img, self.line[0], self.line[1], (0, 255, 0), 3)
+    def process_video_thread(self):
+        if not self.video_path:
+            messagebox.showerror("Error", "No video selected!")
+            return
+        self.process_button.config(state=tk.DISABLED)
+        self.status_label.config(text="Processing video...")
+        output_path = self.video_path.rsplit('.', 1)[0] + "_output.mp4"
+        threading.Thread(target=self.run_processing, args=(self.video_path, output_path), daemon=True).start()
 
-            # if tf:
-            #     cv2.rectangle(img, (rxmin,rymin), (rxmax,rymax), (255,0,0), 3)
-            # else:
-            #     cv2.rectangle(img, (rxmin,rymin), (rxmax,rymax), (0,255,0), 3)
+    def run_processing(self, video_path, output_path):
+        process_video(video_path, output_path)
+        self.status_label.config(text=f"Processing complete! Output saved to: {output_path}")
+        self.process_button.config(state=tk.NORMAL)
 
-            # cv2.imshow('traffic violation', img)
-            
-            #image processing
-            self.main_process()
-            print("Executed Successfully!!!")
-
-            #clearing things
-            self.line.clear()
-            self.rect.clear()
-            for i in self.pos:
-                self.canvas.delete(i)
-
-    def intersection(self, p, q, r, t):
-        print(p, q, r, t)
-        (x1, y1) = p
-        (x2, y2) = q
-
-        (x3, y3) = r
-        (x4, y4) = t
-
-        a1 = y1-y2
-        b1 = x2-x1
-        c1 = x1*y2-x2*y1
-
-        a2 = y3-y4
-        b2 = x4-x3
-        c2 = x3*y4-x4*y3
-
-        if(a1*b2-a2*b1 == 0):
-            return False
-        print((a1, b1, c1), (a2, b2, c2))
-        x = (b1*c2 - b2*c1) / (a1*b2 - a2*b1)
-        y = (a2*c1 - a1*c2) / (a1*b2 - a2*b1)
-        print((x, y))
-
-        if x1 > x2:
-            tmp = x1
-            x1 = x2
-            x2 = tmp
-        if y1 > y2:
-            tmp = y1
-            y1 = y2
-            y2 = tmp
-        if x3 > x4:
-            tmp = x3
-            x3 = x4
-            x4 = tmp
-        if y3 > y4:
-            tmp = y3
-            y3 = y4
-            y4 = tmp
-
-        if x >= x1 and x <= x2 and y >= y1 and y <= y2 and x >= x3 and x <= x4 and y >= y3 and y <= y4:
-            return True
-        else:
-            return False
-
-    def main_process(self):
-
-        video_src = self.filename
-
-        cap = cv2.VideoCapture(video_src)
-
-        reader = imageio.get_reader(video_src)
-        fps = reader.get_meta_data()['fps']    
-        writer = imageio.get_writer('G:/Traffic Violation Detection/Traffic Signal Violation Detection System/Resources/output/output.mp4', fps = fps)
-            
-        j = 1
-        while True:
-            ret, image = cap.read()
-           
-            if (type(image) == type(None)):
-                writer.close()
-                break
-            
-            image_h, image_w, _ = image.shape
-            new_image = od.preprocess_input(image, od.net_h, od.net_w)
-
-            # run the prediction
-            yolos = od.yolov3.predict(new_image)
-            boxes = []
-
-            for i in range(len(yolos)):
-                # decode the output of the network
-                boxes += od.decode_netout(yolos[i][0], od.anchors[i], od.obj_thresh, od.nms_thresh, od.net_h, od.net_w)
-
-            # correct the sizes of the bounding boxes
-            od.correct_yolo_boxes(boxes, image_h, image_w, od.net_h, od.net_w)
-
-            # suppress non-maximal boxes
-            od.do_nms(boxes, od.nms_thresh)     
-
-            # draw bounding boxes on the image using labels
-            image2 = od.draw_boxes(image, boxes, self.line, od.labels, od.obj_thresh, j) 
-            
-            writer.append_data(image2)
-
-            # cv2.imwrite('E:/Virtual Traffic Light Violation Detection System/Images/frame'+str(j)+'.jpg', image2)
-            # self.show_image('E:/Virtual Traffic Light Violation Detection System/Images/frame'+str(j)+'.jpg')
-
-            cv2.imshow('Traffic Violation', image2)
-            
-            print(j)
-
-            if cv2.waitKey(10) & 0xFF == ord('q'):
-                writer.close()
-                break
-
-            j = j+1
-
-        cv2.destroyAllWindows()
-
-root = Tk()
-app = Window(root)
-root.geometry("%dx%d"%(535, 380))
-root.title("Traffic Violation")
-
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = App(root)
+    root.mainloop()
