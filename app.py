@@ -63,7 +63,7 @@ class TrafficViolationApp:
         self.cap = None
         self.running = False
         self.frame_count = 0
-        self.delay = 33  # Default delay in ms (approx. 30 FPS)
+        self.delay = 60  # Default delay in ms (approx. 30 FPS)
         
         # GUI Elements
         self.video_label = tk.Label(root)
@@ -105,7 +105,7 @@ class TrafficViolationApp:
         if fps and fps > 0:
             self.delay = int(1000 / fps)
         else:
-            self.delay = 33  # Default ~30 FPS
+            self.delay = 60  # Default ~30 FPS
         
         self.running = True
         self.frame_count = 0
