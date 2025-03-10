@@ -30,3 +30,6 @@ python app.py
 - Process Video: In the GUI, click on "Select Video" to choose your input video file.
 - Click on "Start Processing" to run the detection system.
 - The application will display the video in a window. A horizontal detection line is drawn at 80% of the frame height. Vehicles whose bounding box's bottom edge crosses this line during a red signal are flagged as "Violation" with a red box; otherwise, they are marked as "Safe" with a green box.
+
+## Demo Video
+
