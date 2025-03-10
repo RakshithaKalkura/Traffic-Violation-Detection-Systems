@@ -2,174 +2,136 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import threading
 import cv2
-import torch
 import numpy as np
+from ultralytics import YOLO
 from PIL import Image, ImageTk
 
-traffic_light_state = "red"
+# Load your trained YOLO model using the ultralytics wrapper
+model = YOLO("best.pt")
 
-# Load the TorchScript model (ensure the model file is in the specified path)
-model = torch.jit.load("model/best_scripted.pt")
-model.eval()
-
-def preprocess(image, img_size=640):
+def process_frame(frame, line_y):
     """
-    Preprocess an image for the model.
-    - Resize to img_size x img_size
-    - Convert from BGR to RGB, normalize to [0, 1]
-    - Rearrange dimensions to (1, 3, H, W)
+    Process a single frame:
+      - Run YOLO detection on the frame.
+      - Draw a horizontal detection line.
+      - For each detection, if the bottom of the bounding box (y2) is below the line,
+        mark it as a violation (red box), else mark it as safe (green box).
     """
-    img = cv2.resize(image, (img_size, img_size))
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = img.astype(np.float32) / 255.0
-    img = np.transpose(img, (2, 0, 1))
-    img = np.expand_dims(img, axis=0)
-    return torch.from_numpy(img)
-
-def postprocess(outputs, conf_threshold=0.5):
-    """
-    Convert raw model outputs into a list of detections.
-    This dummy postprocessing assumes each prediction is:
-    [x1, y1, x2, y2, confidence, class]
-    Adjust this function to match your model's output format.
-    """
-    detections = []
-    # Assume outputs is a tensor of shape (batch, num_preds, 6)
-    outputs = outputs[0]  # Remove batch dimension if needed
-    for pred in outputs:
-        conf = pred[4].item()
-        if conf > conf_threshold:
-            x1, y1, x2, y2, _, cls = pred.tolist()
-            detections.append({
-                "bbox": [int(x1), int(y1), int(x2), int(y2)],
-                "confidence": conf,
-                "class": int(cls)
-            })
-    return detections
-
-def process_video(video_path, output_path):
-    """
-    Process the input video:
-      - For each frame, run inference,
-      - Draw a horizontal detection line,
-      - For each detection, check if the bottom of the bounding box (y2)
-        crosses the detection line.
-      - If the traffic light state is red and the vehicle crosses the line,
-        draw a red box; otherwise, draw a green box.
-    """
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        print("Error opening video file")
-        return
-
-    # Get video properties and prepare VideoWriter
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-
-    # Define a horizontal detection line (for example, at 80% of frame height)
-    line_y = int(height * 0.8)
-
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        # Draw the detection line on the frame (blue color)
-        cv2.line(frame, (0, line_y), (width, line_y), (255, 0, 0), 2)
-
-        # Preprocess the frame and run inference
-        input_tensor = preprocess(frame)
-        with torch.no_grad():
-            outputs = model(input_tensor)
-        detections = postprocess(outputs)
-
-        # For each detection, decide box color based on crossing and traffic light state
-        for det in detections:
-            x1, y1, x2, y2 = det["bbox"]
-            # Compute bottom-center of the bounding box
-            x_center = (x1 + x2) // 2
-            y_bottom = y2  # using the bottom y coordinate
-
-            # Check if the vehicle has crossed the line
-            has_crossed = y_bottom > line_y
-
-            # Determine color: red for violation (if red light and crossed), else green.
-            if traffic_light_state == "red" and has_crossed:
-                color = (0, 0, 255)  # Red in BGR
+    # Run inference using the YOLO model
+    results = model(frame)
+    
+    # Draw the detection line (blue) on the frame
+    height, width, _ = frame.shape
+    cv2.line(frame, (0, line_y), (width, line_y), (255, 0, 0), 2)
+    
+    # Process each detection result
+    for result in results:
+        # Loop through all detected boxes in the result
+        for box in result.boxes:
+            # Get bounding box coordinates (x1, y1, x2, y2)
+            coords = box.xyxy[0]  # tensor with coordinates
+            x1, y1, x2, y2 = int(coords[0]), int(coords[1]), int(coords[2]), int(coords[3])
+            conf = box.conf[0].item()  # confidence score
+            
+            # Decide color: red if vehicle crosses the line, green otherwise
+            if y2 > line_y:
+                color = (0, 0, 255)  # Red for violation
                 label = "Violation"
             else:
-                color = (0, 255, 0)  # Green in BGR
+                color = (0, 255, 0)  # Green for safe
                 label = "Safe"
-
+            
+            # Draw the bounding box and label on the frame
             cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-            cv2.putText(frame, f"{label} {det['confidence']:.2f}", (x1, max(y1 - 10, 0)), 
+            cv2.putText(frame, f"{label} {conf:.2f}", (x1, max(y1 - 10, 0)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+    
+    return frame
 
-        out.write(frame)
-        # Optionally, show the frame (press 'q' to exit early)
-        cv2.imshow("Traffic Violation Detection", frame)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
-            break
-
-    cap.release()
-    out.release()
-    cv2.destroyAllWindows()
-
-# GUI Application Class
-class App:
+class TrafficViolationGUI:
     def __init__(self, root):
         self.root = root
-        root.title("Traffic Light Violation Detector")
+        self.root.title("Traffic Signal Violation Detector")
         self.video_path = None
-
-        # Label to show the current traffic light state
-        self.state_label = tk.Label(root, text=f"Traffic Light State: {traffic_light_state.upper()}")
-        self.state_label.pack(pady=5)
-
-        # Button to toggle traffic light state
-        self.toggle_button = tk.Button(root, text="Toggle Traffic Light", command=self.toggle_state)
-        self.toggle_button.pack(pady=10)
-
-        self.select_button = tk.Button(root, text="Select Video", command=self.select_video)
-        self.select_button.pack(pady=10)
-
-        self.process_button = tk.Button(root, text="Process Video", command=self.process_video_thread, state=tk.DISABLED)
-        self.process_button.pack(pady=10)
-
+        self.cap = None
+        self.running = False
+        
+        # Label to display video frames
+        self.video_label = tk.Label(root)
+        self.video_label.pack()
+        
+        # Button to select a video file
+        self.select_btn = tk.Button(root, text="Select Video", command=self.select_video)
+        self.select_btn.pack(pady=5)
+        
+        # Button to start processing the video
+        self.start_btn = tk.Button(root, text="Start Processing", command=self.start_video, state=tk.DISABLED)
+        self.start_btn.pack(pady=5)
+        
+        # Button to stop processing
+        self.stop_btn = tk.Button(root, text="Stop Processing", command=self.stop_video, state=tk.DISABLED)
+        self.stop_btn.pack(pady=5)
+        
+        # Status label
         self.status_label = tk.Label(root, text="Status: Waiting for video selection")
-        self.status_label.pack(pady=10)
-
-    def toggle_state(self):
-        # Toggle the global traffic light state between "red" and "green"
-        global traffic_light_state
-        traffic_light_state = "green" if traffic_light_state == "red" else "red"
-        self.state_label.config(text=f"Traffic Light State: {traffic_light_state.upper()}")
-
+        self.status_label.pack(pady=5)
+    
     def select_video(self):
-        self.video_path = filedialog.askopenfilename(title="Select Video", 
-                                                     filetypes=(("MP4 files", "*.mp4"), ("All files", "*.*")))
+        self.video_path = filedialog.askopenfilename(
+            title="Select Video File", 
+            filetypes=[("MP4 files", "*.mp4"), ("All Files", "*.*")]
+        )
         if self.video_path:
             self.status_label.config(text=f"Selected: {self.video_path}")
-            self.process_button.config(state=tk.NORMAL)
-
-    def process_video_thread(self):
+            self.start_btn.config(state=tk.NORMAL)
+    
+    def start_video(self):
         if not self.video_path:
-            messagebox.showerror("Error", "No video selected!")
+            messagebox.showerror("Error", "Please select a video file first.")
             return
-        self.process_button.config(state=tk.DISABLED)
-        self.status_label.config(text="Processing video...")
-        output_path = self.video_path.rsplit('.', 1)[0] + "_output.mp4"
-        threading.Thread(target=self.run_processing, args=(self.video_path, output_path), daemon=True).start()
-
-    def run_processing(self, video_path, output_path):
-        process_video(video_path, output_path)
-        self.status_label.config(text=f"Processing complete! Output saved to: {output_path}")
-        self.process_button.config(state=tk.NORMAL)
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = App(root)
-    root.mainloop()
+        
+        self.cap = cv2.VideoCapture(self.video_path)
+        if not self.cap.isOpened():
+            messagebox.showerror("Error", "Could not open video.")
+            return
+        
+        self.running = True
+        self.start_btn.config(state=tk.DISABLED)
+        self.stop_btn.config(state=tk.NORMAL)
+        
+        # Read the first frame to set the detection line at 80% of the frame height
+        ret, frame = self.cap.read()
+        if ret:
+            height, width, _ = frame.shape
+            self.line_y = int(height * 0.8)
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # reset to start
+        # Start video processing in a separate thread
+        threading.Thread(target=self.video_loop, daemon=True).start()
+    
+    def video_loop(self):
+        while self.running and self.cap.isOpened():
+            ret, frame = self.cap.read()
+            if not ret:
+                break
+            processed_frame = process_frame(frame, self.line_y)
+            
+            # Convert frame to RGB and then to a PIL Image for Tkinter display
+            cv2image = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+            img = Image.fromarray(cv2image)
+            imgtk = ImageTk.PhotoImage(image=img)
+            self.video_label.imgtk = imgtk
+            self.video_label.config(image=imgtk)
+            
+            # Wait based on the video's FPS (default to 30 if unavailable)
+            fps = self.cap.get(cv2.CAP_PROP_FPS) or 30
+            delay = int(1000 / fps)
+            self.root.after(delay)
+        self.stop_video()
+    
+    def stop_video(self):
+        self.running = False
+        if self.cap:
+            self.cap.release()
+        self.start_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+        self.status_label.config(text
