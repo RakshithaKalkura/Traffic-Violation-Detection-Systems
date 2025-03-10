@@ -32,4 +32,7 @@ python app.py
 - The application will display the video in a window. A horizontal detection line is drawn at 80% of the frame height. Vehicles whose bounding box's bottom edge crosses this line during a red signal are flagged as "Violation" with a red box; otherwise, they are marked as "Safe" with a green box.
 
 ## Demo Video
-[![Watch the video](https://github.com/RakshithaKalkura/Traffic-Violation-Detection-Systems/blob/main/traffic_videos/Screenshot%202025-03-10%20220018.png)](https://github.com/RakshithaKalkura/Traffic-Violation-Detection-Systems/blob/main/traffic_videos/Screen%20Recording%202025-03-10%20214503.mp4)
+
+https://github.com/user-attachments/assets/e992f2ee-63d5-4fe8-9fef-8a985a750ab0
+
+
