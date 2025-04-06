@@ -15,6 +15,9 @@ print("Using device:", device)
 model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\runs\runs\detect\train\weights\best.pt")
 model.to(device)
 
+model2 = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\helmet_detection\best.pt")
+model2.to(device)
+
 def process_frame(frame, line_y_original):
     """
     Process a frame:
