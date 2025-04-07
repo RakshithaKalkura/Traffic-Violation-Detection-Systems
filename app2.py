@@ -2,8 +2,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import cv2
 from PIL import Image, ImageTk
-from helmet_detection import detect_helmet
-from red_light import detect_red_violation
+from helmet_detection.helmet_detection import detect_helmet
+from red_light_violation.red_light import detect_red_violation
 
 INPUT_WIDTH = 640
 INPUT_HEIGHT = 480

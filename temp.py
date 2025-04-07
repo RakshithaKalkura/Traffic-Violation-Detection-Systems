@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk
 import cv2
-from helmet_detection import detect_helmet_violations
+from helmet_detection.helmet_detection import detect_helmet_violations
 
 class HelmetDetectionApp:
     def __init__(self, root):
