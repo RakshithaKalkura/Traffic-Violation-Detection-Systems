@@ -5,6 +5,10 @@ import numpy as np
 import torch
 from ultralytics import YOLO
 from PIL import Image, ImageTk
+import threading
+import os
+import sys
+import time
 
 
 INPUT_SIZE = 320      # Lower resolution for faster processing
@@ -12,6 +16,7 @@ SKIP_FRAMES = 1       # Process every nth frame
 device = "cpu"
 print("Using device:", device)
 
+#load the two models - YOLOv11 for vehicle detection and helmet detection
 model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\runs\runs\detect\train\weights\best.pt")
 model.to(device)
 
@@ -61,7 +66,7 @@ def process_frame(frame, line_y_original):
 class TrafficViolationApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Traffic Signal Violation Detector")
+        self.root.title("Traffic Violation Detector")
         self.video_path = None
         self.cap = None
         self.running = False
