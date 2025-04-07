@@ -36,3 +36,6 @@ python app.py
 https://github.com/user-attachments/assets/e992f2ee-63d5-4fe8-9fef-8a985a750ab0
 
 
+## License
+
+This project is licensed under the [BSD 2-Clause License](./LICENSE).
