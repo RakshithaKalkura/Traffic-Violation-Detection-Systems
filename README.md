@@ -9,6 +9,18 @@ A computer vision-based system that uses YOLOv11 to automatically detect and fla
 - ⚡ Real-time processing with YOLOv11 models
 - 📊 Visual classification with color-coded violation indicators
 
+## 🔍 Datasets
+- Vehicle Detection Dataset - [Link here](https://universe.roboflow.com/farzad/vehicle_detection_yolov8)
+- Helmet Detection Dataset - [Link here](https://www.kaggle.com/datasets/andrewmvd/helmet-detection/data)
+
+## 👤 GUI of the app
+![Screenshot 2025-04-14 152838](https://github.com/user-attachments/assets/e412a9a2-b0c2-418d-9eb4-84e697a58aa7)
+
+## 💻 Training and Development
+- Python3 Environment
+- Google Colab A100 GPU for training yolov11 model
+- Streamlit deployment
+
 ## 📐 System Architecture
 
 ```
@@ -125,6 +137,10 @@ Each frame will contain:
 ## 🌐 Acknowledgement
 
 This project was conducted under the supervision of Prof. M Prabhu and Anisha ma'am of CVLA group of NIT Calicut. Eternally grateful for all the guidance and mentorship.
+Also, grateful for the open source communities:
+- Roboflow
+- Kaggle
+- Streamlit
 
 ## License
 
