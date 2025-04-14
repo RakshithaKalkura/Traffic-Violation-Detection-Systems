@@ -79,7 +79,7 @@ You can train your own models or download pre-trained weights compatible with YO
 
 ### 1. Run the script
 ```bash
-python app.py
+python app_st.py
 ```
 
 ### 2. Upload the video
