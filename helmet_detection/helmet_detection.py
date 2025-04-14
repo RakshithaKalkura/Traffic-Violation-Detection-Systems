@@ -3,8 +3,12 @@
 import cv2
 import torch
 from ultralytics import YOLO
+import threading
+import os
+import sys
+import time
 
-model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\helmet_detection\best.pt")  # Update path as needed
+model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\helmet_detection\best.pt")  
 
 def detect_helmet_violations(frame, device="cpu"):
     """

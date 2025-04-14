@@ -1,6 +1,10 @@
 from ultralytics import YOLO
 import torch
 import cv2
+import threading
+import os
+import sys
+import time
 
 red_model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\runs\runs\detect\train\weights\best.pt")
 red_model.to("cpu")
