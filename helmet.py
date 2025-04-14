@@ -6,7 +6,7 @@ import tempfile
 from ultralytics import YOLO
 
 # Load YOLOv11 model
-model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\helmet_detection\best.pt")  # Update with your YOLOv11 .pt file path
+model = YOLO(r"C:\Users\raksh\Traffic-Violation-Detection-Systems\best.pt")  # Update with your YOLOv11 .pt file path
 
 # Define class names based on your trained dataset
 # e.g., model.names = {0: 'motorcyclist', 1: 'helmet', 2: 'no_helmet'}
