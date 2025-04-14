@@ -34,7 +34,8 @@ A computer vision-based system that uses YOLOv11 to automatically detect and fla
 
 ## 📽️ Demo Video
  
- https://github.com/user-attachments/assets/e992f2ee-63d5-4fe8-9fef-8a985a750ab0
+[Demo.webm](https://github.com/user-attachments/assets/c410c7be-39ae-4e7f-8bcf-f5ba67fd214c)
+
 
 ## ⚙️ Installation
 
@@ -98,10 +99,6 @@ Each frame will contain:
   - 🟥 Red for red light or helmet violations
   - 🟩 Green for compliant vehicles
   - 🟧 Orange for red light violations only (non-bike)
-
-## 📽️ Demo
-
-Add a sample processed video in `demo/processed_demo.mp4` or [link a YouTube video here].
 
 ## 📌 How It Works
 
