@@ -32,6 +32,10 @@ A computer vision-based system that uses YOLOv11 to automatically detect and fla
                   Annotated Video Frame Output
 ```
 
+## 📽️ Demo Video
+ 
+ https://github.com/user-attachments/assets/e992f2ee-63d5-4fe8-9fef-8a985a750ab0
+
 ## ⚙️ Installation
 
 ### 1. Clone the Repository
