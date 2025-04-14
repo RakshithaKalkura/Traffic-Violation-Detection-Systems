@@ -39,3 +39,115 @@ https://github.com/user-attachments/assets/e992f2ee-63d5-4fe8-9fef-8a985a750ab0
 ## License
 
 This project is licensed under the [BSD 2-Clause License](./LICENSE).
+
+title: Traffic Violation Detection System
+description: YOLOv11-based detection of red light and helmet violations
+author: Rakshitha Kalkura
+license: MIT
+
+sections:
+  - heading: 🚦 Traffic Violation Detection System
+    content: |
+      This project is a computer vision-based system for detecting:
+      - 🚫 Helmet violations (for motorbike riders)
+      - 🚨 Red light violations (for all vehicles)
+
+      It uses YOLOv11 models for real-time object detection and integrates:
+      - A model for detecting motorbikes and other vehicles
+      - A model for detecting helmets (with/without)
+
+  - heading: 📐 System Architecture
+    codeblock: |
+      ┌──────────────────────────────┐
+      │       Input Video Stream     │
+      └────────────┬─────────────────┘
+                   │
+                   ▼
+      ┌──────────────────────────────┐
+      │ YOLOv11 Vehicle Detection     │
+      └────┬──────────────┬───────────┘
+           │              │
+           │       For motorbike only
+           ▼              ▼
+      Red light check     Helmet Detection (YOLOv11)
+           │              │
+           └────┬─────────┘
+                ▼
+      ▓ Mark as Violation or Safe with bounding box
+                ▼
+         Annotated Video Frame Output
+
+  - heading: ⚙️ Installation
+    steps:
+      - Clone the repository:
+        command: |
+          git clone https://github.com/your-username/traffic-violation-detector.git
+          cd traffic-violation-detector
+      - Create a virtual environment (optional):
+        command: |
+          python -m venv venv
+          source venv/bin/activate  # or venv\Scripts\activate on Windows
+      - Install dependencies:
+        command: |
+          pip install -r requirements.txt
+      - requirements.txt:
+        list:
+          - torch
+          - opencv-python
+          - ultralytics==8.0.20
+          - numpy
+
+  - heading: 🧠 Models Used
+    items:
+      - Vehicle Detection:
+          - YOLOv11
+          - Classes: car, truck, bus, motorbike
+          - Used for red light detection
+      - Helmet Detection:
+          - YOLOv11
+          - Classes: with helmet, without helmet
+          - Applied only to motorbike detections
+      - Model files to place in project directory:
+          - vehicle_model.pt
+          - helmet_model.pt
+
+  - heading: ▶️ Running the System
+    steps:
+      - Add your input video in:
+        path: ./input/input_video.mp4
+      - Run the application:
+        command: python app.py
+      - Output video will be saved at:
+        path: ./output/output_video.mp4
+    output_details: |
+      Each processed frame contains:
+      - Blue line = red light stop line
+      - Red bounding box = violation
+      - Green box = safe
+      - Orange box = red light violation only (non-bike)
+
+  - heading: 📽️ Demo
+    content: |
+      You can include a sample processed video:
+      - demo/processed_demo.mp4
+      - Screenshot: demo/sample_frame.png
+
+  - heading: 📌 Notes
+    list:
+      - Helmet detection is only for motorbike class
+      - Red light detection applies to all vehicles
+      - The red light line is at 80% of video height
+
+  - heading: 🚀 Future Improvements
+    list:
+      - Number plate recognition integration
+      - Live RTSP camera stream support
+      - Jetson Nano edge deployment
+
+  - heading: 👩‍💻 Contributors
+    contributors:
+      - Rakshitha Kalkura – Research & Development, Model Training, Integration
+
+  - heading: 📄 License
+    license_type: MIT
+    file: LICENSE
